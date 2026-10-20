@@ -35,6 +35,7 @@ import sys
 import tempfile
 import threading
 from collections.abc import Awaitable, Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -372,9 +373,15 @@ def concurrent_wsgi(wsgi_app: Any) -> AsgiApp:
     `thread_sensitive=True`, i.e. one shared thread: a single `/delay/5` would stall every
     other request. lkrequest-py runs its tests one at a time and never notices; the test
     files here run in parallel, so each request gets a pool thread instead.
+
+    The pool has a fixed size. The event loop's default executor scales with the host's
+    CPUs, and the 7 or 8 threads it gets on a small CI runner are too few for the slow
+    requests of several test files at once; 32 is what it gets on a large host.
     """
     from asgiref.sync import sync_to_async
     from asgiref.wsgi import WsgiToAsgiInstance
+
+    pool = ThreadPoolExecutor(max_workers=32, thread_name_prefix="wsgi")
 
     class ConcurrentInstance(WsgiToAsgiInstance):
         """`WsgiToAsgiInstance` whose WSGI call is not pinned to the shared thread."""
@@ -382,7 +389,9 @@ def concurrent_wsgi(wsgi_app: Any) -> AsgiApp:
         # Read through `__dict__`: plain attribute access would bind the descriptor and hand
         # back an async wrapper instead of the original sync function.
         run_wsgi_app = sync_to_async(
-            WsgiToAsgiInstance.__dict__["run_wsgi_app"].func, thread_sensitive=False
+            WsgiToAsgiInstance.__dict__["run_wsgi_app"].func,
+            thread_sensitive=False,
+            executor=pool,
         )
 
     async def app(scope: Scope, receive: Receive, send: Send) -> None:
@@ -390,6 +399,31 @@ def concurrent_wsgi(wsgi_app: Any) -> AsgiApp:
         await ConcurrentInstance(wsgi_app)(scope, receive, send)
 
     return app
+
+
+def release_h2_buffers_on_close() -> None:
+    """Patch hypercorn to release the stream buffers of a closed HTTP/2 connection.
+
+    hypercorn's HTTP/2 protocol drains every stream's buffer from one send task. That task
+    ends when the connection closes, but the buffers stay open, so a response still being
+    written waits for a drain that never comes, and so does the WSGI thread writing it. A
+    request the client gave up on, such as an aborted `/delay/5` whose test file exits
+    within the five seconds, would hold its pool thread until the server stops, and a few
+    test files' worth exhaust the pool. Once the send task ends, its buffers are closed and
+    dropped, as hypercorn does for a single closed stream: the blocked senders wake up, and
+    what they send afterwards is discarded.
+    """
+    from hypercorn.protocol.h2 import H2Protocol
+
+    send_task = H2Protocol.send_task
+
+    async def send_then_release(self: Any) -> None:
+        """Run the send task, then close and drop the buffers it no longer drains."""
+        await send_task(self)
+        for stream_id in list(self.stream_buffers):
+            await self.stream_buffers.pop(stream_id).close()
+
+    H2Protocol.send_task = send_then_release
 
 
 def build_app() -> AsgiApp:
@@ -453,6 +487,8 @@ async def serve() -> None:
 
     from h3_closing_server import H3ClosingServer
     from masque_proxy import MasqueProxy
+
+    release_h2_buffers_on_close()
 
     certs = Path(tempfile.mkdtemp(prefix="lkrequest-js-certs-"))
     cert_file, key_file = certs / "cert.pem", certs / "key.pem"

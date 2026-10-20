@@ -25,7 +25,6 @@
   <a href="#使用指南">使用指南</a> ·
   <a href="examples/README.md">示例</a> ·
   <a href="CHANGELOG.md">更新日志</a> ·
-  <a href="CONTRIBUTING.md">参与贡献</a> ·
   <a href="README.md">English</a>
 </p>
 
@@ -449,10 +448,6 @@ pnpm typecheck            # tsc --noEmit
 pnpm lint                 # Biome + rustfmt + clippy
 pnpm build                # release 原生扩展 + dist/
 ```
-
-## 参与贡献
-
-欢迎贡献。目录结构、代码风格和提交 PR 前的检查清单见 [CONTRIBUTING.md](CONTRIBUTING.md)（英文）。客户端在网络上发出的内容由 [Rust 库](https://github.com/EZXLabs/lkrequest-rs)决定，指纹方面的改动应当提给它。
 
 ## 安全
 

@@ -25,7 +25,6 @@
   <a href="#guides">Guides</a> ·
   <a href="examples/README.md">Examples</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -512,12 +511,6 @@ pnpm typecheck            # tsc --noEmit
 pnpm lint                 # Biome + rustfmt + clippy
 pnpm build                # release native addon + dist/
 ```
-
-## Contributing
-
-Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the project layout, the code
-style and the checklist for pull requests. What the client sends on the wire comes from the
-[Rust library](https://github.com/EZXLabs/lkrequest-rs), so changes to fingerprints belong there.
 
 ## Security
 

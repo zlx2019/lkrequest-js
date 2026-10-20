@@ -85,6 +85,9 @@ install_rust
 # A cdylib cannot be built with musl's default static C runtime.
 if [ -e /etc/alpine-release ]; then
   export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=-crt-static"
+  # napi takes an aarch64 musl build for a cross build and sets the cross linker
+  # (aarch64-linux-musl-gcc) unless this is already set; natively, the system cc links.
+  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="${CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER:-cc}"
 fi
 node --version
 rustc --version

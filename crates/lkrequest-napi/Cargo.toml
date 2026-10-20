@@ -1,0 +1,39 @@
+[package]
+name = "lkrequest-napi"
+description = "Node-API bindings for the lkrequest HTTP client (private native layer of the lkrequest npm package)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+quic-h3 = ["lkrequest/quic-h3"]
+telemetry = ["lkrequest/telemetry"]
+synthetic-fp = ["lkrequest/synthetic-fp"]
+doh = ["lkrequest/doh"]
+masque = ["quic-h3", "lkrequest/masque"]
+
+[dependencies]
+lkrequest = { git = "https://github.com/EZXLabs/lkrequest-rs", branch = "main" }
+lkprofile = { git = "https://github.com/EZXLabs/lkrequest-rs", branch = "main" }
+napi = { version = "3.14", features = ["napi9", "tokio_rt"] }
+napi-derive = "3.6"
+bytes = "1"
+async-trait = "0.1"
+futures-core = "0.3"
+http = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
+serde_json = "1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry", "env-filter"] }
+
+[build-dependencies]
+napi-build = "2.6"
+
+[lints]
+workspace = true

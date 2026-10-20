@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023", "esnext.disposable"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedDeclarations": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    // Examples import the package by name, as users do; type-check them against the source.
+    "paths": {
+      "lkrequest": ["./src/index.ts"]
+    }
+  },
+  "include": ["src", "test", "examples"]
+}

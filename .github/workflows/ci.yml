@@ -1,0 +1,224 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to a branch or PR supersedes the running workflow; tag runs always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Biome, rustfmt and clippy
+        run: pnpm lint
+      - run: pnpm typecheck
+
+  # Every target builds natively on a runner of its own architecture. Linux builds run in a
+  # container: manylinux_2_28 (glibc >= 2.28, the floor of Node.js 22 itself) or Alpine.
+  build:
+    name: Build · ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            image: quay.io/pypa/manylinux_2_28_x86_64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            image: quay.io/pypa/manylinux_2_28_aarch64
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+            image: node:22-alpine
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+            image: node:22-alpine
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025
+          - target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      # Linux: the same script as the GitLab build jobs. `docker run` rather than a job
+      # container, because JavaScript actions cannot run in an arm64 Alpine container.
+      - name: Build in ${{ matrix.image }}
+        if: matrix.image
+        run: docker run --rm -v "$PWD:/work" -w /work "${{ matrix.image }}" sh scripts/ci/build-linux.sh
+
+      # macOS and Windows: build on the runner itself.
+      - uses: dtolnay/rust-toolchain@stable
+        if: ${{ !matrix.image }}
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ !matrix.image }}
+        with:
+          key: ${{ matrix.target }}
+      - uses: pnpm/action-setup@v6
+        if: ${{ !matrix.image }}
+      - uses: actions/setup-node@v7
+        if: ${{ !matrix.image }}
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Build and smoke test
+        if: ${{ !matrix.image }}
+        shell: bash
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:native
+          pnpm build:ts
+          node scripts/smoke.mjs
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bindings-${{ matrix.target }}
+          path: native/*.node
+          if-no-files-found: error
+
+  # The full suite against the built addons, on every supported Node.js major. The test
+  # server (httpbin + hypercorn + aioquic) runs locally through uv; no public network.
+  test:
+    name: Test · ${{ matrix.host.os }} · Node ${{ matrix.node }}
+    needs: [build]
+    runs-on: ${{ matrix.host.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+        node: [22, 24, 26]
+        include:
+          - host:
+              os: ubuntu-24.04-arm
+              target: aarch64-unknown-linux-gnu
+            node: 24
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: bindings-${{ matrix.host.target }}
+          path: native
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  # Bun and Deno are not supported runtimes, but the addon should load there. Best effort: the
+  # offline smoke test against the Linux x64 build, whose failure fails neither the workflow
+  # nor the release.
+  runtimes:
+    name: Smoke · ${{ matrix.runtime }}
+    needs: [build]
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: Bun
+            run: npx --yes bun@1 scripts/smoke.mjs
+          - runtime: Deno
+            run: npx --yes deno@2 run -A scripts/smoke.mjs
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/download-artifact@v8
+        with:
+          name: bindings-x86_64-unknown-linux-gnu
+          path: native
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:ts
+      - run: ${{ matrix.run }}
+
+  # Publishes the eight platform packages, then the main package, with npm Trusted Publishing:
+  # npm exchanges this job's OIDC token for a short-lived publish credential and adds
+  # provenance, so the repository stores no token.
+  publish:
+    name: Publish to npm
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, build, test]
+    runs-on: ubuntu-24.04
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/lkrequest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          # Trusted Publishing needs npm 11.5.1 or later, which Node.js 24 ships.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+      - name: Check the npm version
+        run: |
+          npm --version
+          node -e 'const [major, minor] = process.argv[1].split(".").map(Number);
+            if (major < 11 || (major === 11 && minor < 5)) { console.error("npm >= 11.5.1 required"); process.exit(1); }' "$(npm --version)"
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/check-version.mjs "${GITHUB_REF_NAME}"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bindings-*
+          path: artifacts
+      - run: pnpm build:ts
+      - name: Stage the platform packages
+        run: |
+          pnpm exec napi create-npm-dirs
+          pnpm exec napi artifacts -d artifacts
+          # npm adds a LICENSE file to every package, but napi does not copy it into the
+          # platform ones.
+          for dir in npm/*/; do cp LICENSE "${dir}"; done
+      - name: Publish
+        run: |
+          # Prereleases (X.Y.Z-rc.N) go to the `next` dist-tag, never to `latest`.
+          case "${GITHUB_REF_NAME}" in *-*) export npm_config_tag=next ;; esac
+          pnpm exec napi pre-publish -t npm
+          npm publish

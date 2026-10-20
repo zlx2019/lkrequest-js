@@ -1,0 +1,81 @@
+{
+  "name": "lkrequest",
+  "version": "0.1.0",
+  "description": "Node.js HTTP client with byte-level TLS, HTTP/2 and HTTP/3 fingerprint control, powered by Rust",
+  "license": "Apache-2.0",
+  "author": "BurstLinker Inc.",
+  "homepage": "https://github.com/EZXLabs/lkrequest-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EZXLabs/lkrequest-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EZXLabs/lkrequest-js/issues"
+  },
+  "keywords": [
+    "http",
+    "http2",
+    "http3",
+    "quic",
+    "tls",
+    "fingerprint",
+    "ja3",
+    "ja4",
+    "client",
+    "rust"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "native/index.cjs",
+    "native/index.d.cts",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@10.13.1",
+  "napi": {
+    "binaryName": "lkrequest",
+    "packageName": "@lkrequest/binding",
+    "constEnum": false,
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build": "pnpm run build:native && pnpm run build:ts",
+    "build:native": "napi build --platform --release --manifest-path crates/lkrequest-napi/Cargo.toml --output-dir native --js index.cjs --dts index.d.cts --features quic-h3,telemetry,synthetic-fp,doh,masque",
+    "build:native:debug": "napi build --platform --manifest-path crates/lkrequest-napi/Cargo.toml --output-dir native --js index.cjs --dts index.d.cts --features quic-h3,telemetry,synthetic-fp,doh,masque",
+    "build:ts": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check . && cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "format": "biome check --write . && cargo fmt --all"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@napi-rs/cli": "^3.10.8",
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

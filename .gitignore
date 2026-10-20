@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+target/
+*.tsbuildinfo
+
+# Native addons built locally (the generated loader and type declarations are tracked)
+native/*.node
+
+# Release staging: per-platform packages and downloaded build artifacts, generated in CI
+/npm/
+/artifacts/
+
+# CI caches, kept inside the project directory so the pipeline can cache them
+/.cargo/
+/.pnpm-store/
+/.uv-cache/
+
+# Local-only configuration
+.cargo/config.toml
+.claude/settings.local.json
+.env
+.env.*
+
+# Test artifacts
+coverage/
+
+# Python test-server caches
+__pycache__/
+.venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

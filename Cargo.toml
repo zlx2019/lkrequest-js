@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = ["crates/lkrequest-napi"]
+exclude = [".cargo"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/EZXLabs/lkrequest-js"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
